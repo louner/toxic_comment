@@ -91,7 +91,8 @@ class Batch:
         self.batch_size = batch_size
         self.max_sentence_length = SENTENCE_LENGTH
         data, labels = self.preprocess(self.df, labels)
-        self.data, self.labels = self.sort_mat_by_row_non_zero_counts(data, labels)
+        #self.data, self.labels = self.sort_mat_by_row_non_zero_counts(data, labels)
+        self.data, self.labels = data, labels
 
     def to_id(self, batch):
         batch = [[dictionary[tok] if tok in dictionary else dictionary[unseen] for tok in tokenize(sentence)] for sentence in batch]
@@ -102,7 +103,7 @@ class Batch:
         zeros = np.zeros((batch.shape[0], self.max_sentence_length))
         for i in range(batch.shape[0]):
             batch[i] = batch[i][:min(self.max_sentence_length, len(batch[i]))]
-            zeros[i, :len(batch[i])] = batch[i]
+            zeros[i, -1*len(batch[i]):] = batch[i]
         batch = zeros
         return batch
 
@@ -150,7 +151,7 @@ class Batch:
             return data, label
         except IndexError:
             self.index = 0
-            #self.data = np.random.permutation(self.data)
+            self.data = np.random.permutation(self.data)
             raise StopIteration
 
     def __iter__(self):
