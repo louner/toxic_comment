@@ -10,13 +10,13 @@ model_filepath = './models/model'
 embedding_size = 300
 epoch_number = 10
 kernel_height = 2
-vocab_shape = (30002, 300)
+vocab_shape = (20002, 300)
 kernel_number = 64
 kernel_size = (kernel_height, embedding_size)
 stack_kernel_size = (kernel_height, kernel_number)
 num_classes = len(categories)
 #num_classes = 2
-learning_rate = 0.001
+learning_rate = 0.01
 epoch_number = 20
 layner_number = 2
 epslon = 1e-10
@@ -197,6 +197,12 @@ class NNModel:
             saver.save(self.sess, '%s_%d'%(self.model_filepath, epoch))
             self.logger.info('%d epoch avg loss: %f'%(epoch, sum(val_losses)))
             metrics.append([sum(train_losses)/(len(train_losses)+1), sum(val_losses)/(len(val_losses)+1)])
+
+            summary = tf.Summary()
+            summary.value.add(tag='train/loss', simple_value=sum(train_losses))
+            summary.value.add(tag='val/loss', simple_value=sum(val_losses))
+            writer.add_summary(summary)
+            writer.flush()
 
             df_metrics = pd.DataFrame(metrics, columns=['train_err', 'val_err'])
             df_metrics['x'] = df_metrics.index
@@ -399,7 +405,7 @@ if __name__ == '__main__':
     #df = pd.read_csv('data/train.csv').iloc[:1000, :]
     df = pd.read_csv('data/train.csv')
 
-    kf = KFold(n_splits=2)
+    kf = KFold(n_splits=10)
     X = df.values
     kf_times = 0
 
@@ -412,11 +418,11 @@ if __name__ == '__main__':
         #train_set = over_sampling(train_set)
 
         #model = NNModel('%d'%(kf_times), ['negative', 'positive'])
-        #model = GRU('%d'%(kf_times), categories)
+        model = GRU('%d'%(kf_times), categories)
         #model = NNModel('cnn_toxic', ['negative', 'positive'])
         #model = AttentionGRU(str(kf_times), categories)
         #model = MultiLayerGRU('gru_layers_%s_%d'%(cat, kf_times), ['negative', 'positive'])
         #model = Sigmoid('sigmoid_%d'%(kf_times), categories)
-        model = Char_CNN_RNN('%d'%(kf_times), categories)
+        #model = Char_CNN_RNN('%d'%(kf_times), categories)
         model.train([train_set, val_set])
         kf_times += 1
