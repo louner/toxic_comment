@@ -16,7 +16,7 @@ def init_logger(logger_path):
     logger.addHandler(handler)
     return logger
 
-SENTENCE_LENGTH = 300
+SENTENCE_LENGTH = 600
 CHAR_LENGTH = 32
 unseen = 'unk'
 
@@ -153,7 +153,8 @@ class Batch:
             return data, label
         except IndexError:
             self.index = 0
-            self.data = np.random.permutation(self.data)
+            index = np.random.permutation(self.data.shape[0])
+            self.data, self.labels = self.data[index], self.labels[index]
             raise StopIteration
 
     def __iter__(self):
