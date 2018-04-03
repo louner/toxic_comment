@@ -1,5 +1,6 @@
 import json
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 import pandas as pd
 from nltk import word_tokenize
@@ -19,8 +20,14 @@ import logging
 dictionary = json.load(open('%s.json' % (vocab_file_path)))
 
 def tokenize(sentence):
-    for tok in word_tokenize(sentence):
-        yield tok
+    try:
+        sentence = sentence.decode('ascii', 'ignore')
+        for tok in word_tokenize(sentence):
+            yield str(tok)
+    except:
+        print sentence
+        raise
+        pass
 
 def preprocess(sentences):
     sentences_preprocessed = []
@@ -125,3 +132,8 @@ def trans():
 
         print(sess.run([sentence_matrix1, sentence_matrix2]))
 
+'''
+df = pd.read_csv('train.csv')
+sentence = df.iloc[7100]['comment_text']
+print [tok for tok in tokenize(sentence)]
+'''
