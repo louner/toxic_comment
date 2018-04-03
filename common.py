@@ -4,7 +4,7 @@ from embedding import vocab_file_path, tokenize
 import pandas as pd
 import json
 from sklearn.metrics import precision_score, recall_score
-from imblearn.over_sampling import RandomOverSampler, SMOTE
+#from imblearn.over_sampling import RandomOverSampler, SMOTE
 
 np.random.seed(9)
 
@@ -18,7 +18,7 @@ def init_logger(logger_path):
 
 SENTENCE_LENGTH = 300
 CHAR_LENGTH = 32
-unseen = '@UNSEEN@'
+unseen = 'unk'
 
 dictionary = json.load(open('%s.json' % (vocab_file_path)))
 
@@ -52,7 +52,7 @@ def to_word_id(batch):
                 print('none %s'%(tok))
     '''
     # remove unseen
-    batch = [[dictionary[tok] if tok in dictionary else 399999 for tok in tokenize(sentence) ] for sentence in batch]
+    batch = [[dictionary[tok] if tok in dictionary else dictionary[unseen] for tok in tokenize(sentence) ] for sentence in batch]
     return batch
 
 def preprocess(batch, labels, batch_size):
@@ -96,7 +96,7 @@ class Batch:
         self.data, self.labels = data, labels
 
     def to_id(self, batch):
-        batch = [[dictionary[tok] if tok in dictionary else 399999 for tok in tokenize(sentence)] for sentence in batch]
+        batch = [[dictionary[tok] if tok in dictionary else dictionary[unseen] for tok in tokenize(sentence)] for sentence in batch]
         return batch
 
     def padding(self, batch):
@@ -158,6 +158,9 @@ class Batch:
 
     def __iter__(self):
         return self
+
+    def next(self):
+        return self.__next__()
 
 class Batch_char(Batch):
     def __init__(self, df, labels, batch_size=100):
