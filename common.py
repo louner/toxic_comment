@@ -6,7 +6,7 @@ import json
 from sklearn.metrics import precision_score, recall_score
 from imblearn.over_sampling import RandomOverSampler, SMOTE
 
-np.random.seed(0)
+np.random.seed(9)
 
 def init_logger(logger_path):
     handler = logging.FileHandler(logger_path, mode='w')
@@ -16,7 +16,7 @@ def init_logger(logger_path):
     logger.addHandler(handler)
     return logger
 
-SENTENCE_LENGTH = 200
+SENTENCE_LENGTH = 300
 CHAR_LENGTH = 32
 unseen = '@UNSEEN@'
 
@@ -24,6 +24,7 @@ dictionary = json.load(open('%s.json' % (vocab_file_path)))
 
 #categories = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate', 'normal']
 categories = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+categories = ['neg', 'pos']
 
 def get_numbered_label(data, categories):
     label = pd.Series([0]*data.shape[0])
@@ -51,7 +52,7 @@ def to_word_id(batch):
                 print('none %s'%(tok))
     '''
     # remove unseen
-    batch = [[dictionary[tok] if tok in dictionary else dictionary[unseen] for tok in tokenize(sentence) ] for sentence in batch]
+    batch = [[dictionary[tok] if tok in dictionary else 399999 for tok in tokenize(sentence) ] for sentence in batch]
     return batch
 
 def preprocess(batch, labels, batch_size):
@@ -86,7 +87,7 @@ def sort_mat_by_row_non_zero_counts(m):
 
 class Batch:
     def __init__(self, df, labels, batch_size=100):
-        self.df = df
+        self.df = df.sample(frac=1.0)
         self.index = 0
         self.batch_size = batch_size
         self.max_sentence_length = SENTENCE_LENGTH
@@ -95,7 +96,7 @@ class Batch:
         self.data, self.labels = data, labels
 
     def to_id(self, batch):
-        batch = [[dictionary[tok] if tok in dictionary else dictionary[unseen] for tok in tokenize(sentence)] for sentence in batch]
+        batch = [[dictionary[tok] if tok in dictionary else 399999 for tok in tokenize(sentence)] for sentence in batch]
         return batch
 
     def padding(self, batch):
@@ -103,7 +104,8 @@ class Batch:
         zeros = np.zeros((batch.shape[0], self.max_sentence_length))
         for i in range(batch.shape[0]):
             batch[i] = batch[i][:min(self.max_sentence_length, len(batch[i]))]
-            zeros[i, -1*len(batch[i]):] = batch[i]
+            zeros[i, :len(batch[i])] = batch[i]
+            #zeros[i, -1*len(batch[i]):] = batch[i]
         batch = zeros
         return batch
 
@@ -144,8 +146,8 @@ class Batch:
 
             data, label = self.data[self.index:next_index, :SENTENCE_LENGTH], self.labels[self.index:next_index]
 
-            sentence_length = (data.sum(axis=0) != 0).sum()
-            data = data[:, :sentence_length]
+            #sentence_length = (data.sum(axis=0) != 0).sum()
+            #data = data[:, :sentence_length]
 
             self.index = next_index
             return data, label
@@ -258,6 +260,10 @@ def over_sampling(data):
     over_data = over_ids.merge(data, on='id')
     return over_data
 
+def mean(l):
+    return sum(l)/len(l)
+
 if __name__ == '__main__':
     #test_embed()
     test_batch()
+
