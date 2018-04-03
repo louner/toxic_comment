@@ -9,7 +9,7 @@ model_filepath = './models/model'
 embedding_size = 50
 epoch_number = 10
 kernel_height = 2
-vocab_shape = (80716, embedding_size)
+vocab_shape = (72587, embedding_size)
 kernel_number = 64
 kernel_size = (kernel_height, embedding_size)
 stack_kernel_size = (kernel_height, kernel_number)
@@ -22,8 +22,8 @@ epslon = 1e-10
 fc_dim = SENTENCE_LENGTH*kernel_number
 kernel_heights = [x for x in range(2, 5)]
 fc_dim = kernel_number*len(kernel_heights)
-dropout_probability = 0.5
-batch_size = 32
+dropout_keep_probability = 1.0
+batch_size = 128
 gru_hidden_size = 32
 
 attention_size = 32
@@ -31,6 +31,8 @@ attention_size = 32
 rnn_layer_num = 4
 
 char_embedding_size = 32
+
+time_stamp = str(time())
 
 class NNModel:
     def __init__(self, model_name, labels, **kwargs):
@@ -48,7 +50,7 @@ class NNModel:
         self.learning_rate = learning_rate
         self.embedding_size = embedding_size
         self.epoch_number = epoch_number
-        self.dropout_probability = dropout_probability
+        self.dropout_keep_probability = dropout_keep_probability
 
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -104,7 +106,7 @@ class NNModel:
 
         concat = tf.concat(pool_layer, axis=1)
         output = tf.reshape(concat, (-1, fc_dim))
-        dropped = tf.nn.dropout(output, self.dropout_prob)
+        dropped = tf.nn.dropout(output, self.dropout_keep_prob)
         
         self.predict_layer = tf.nn.sigmoid(tf.matmul(dropped, fc_w) + fc_b)
         self.predict_prob = tf.nn.softmax(self.predict_layer)
@@ -122,7 +124,7 @@ class NNModel:
     def build_inputs(self):
         self.labels = tf.placeholder(shape=(None, len(self.Labels)), dtype=tf.float32, name='label')
         self.inputs = tf.placeholder(shape=(None, None), dtype=tf.int32, name='inputs')
-        self.dropout_prob = tf.placeholder(dtype=tf.float32)
+        self.dropout_keep_prob = tf.placeholder(dtype=tf.float32)
         self.batch_size = tf.placeholder(dtype=tf.int32)
         self.sentence_length = tf.placeholder(dtype=tf.int32)
                 
@@ -150,9 +152,9 @@ class NNModel:
         self.feed_dict[self.sentence_length] = (comments_batch != 0).sum(axis=1)
 
     def _train(self, train_set, val_set, labels):
-        check = tf.add_check_numerics_ops()
+        #check = tf.add_check_numerics_ops()
 
-        writer = tf.summary.FileWriter('summary/%s/%s'%(self.summary_path, str(time())), self.sess.graph)
+        writer = tf.summary.FileWriter('summary/%s/%s'%(self.summary_path, time_stamp), self.sess.graph)
         tf.summary.scalar('loss', tf.reduce_mean(self.loss))
         tf.summary.scalar('accuracy', self.acc)
         merged = tf.summary.merge_all()
@@ -163,8 +165,9 @@ class NNModel:
         val_bt = Batch(val_set, labels, batch_size=batch_size)
 
         metrics = []
+        train_step, val_step = 0, 0
         for epoch in range(epoch_number):
-            self.feed_dict[self.dropout_prob] = dropout_probability
+            self.feed_dict[self.dropout_keep_prob] = dropout_keep_probability
 
             for batch in bt:
                 try:
@@ -177,15 +180,18 @@ class NNModel:
 
                     self.build_feed_dict(comments_batch, label)
 
-                    _, l, prob, step = self.sess.run([self.train_step, self.loss, self.predict_prob, self.global_step], feed_dict=self.feed_dict)
+                    _, l, acc = self.sess.run([self.train_step, self.loss, self.acc], feed_dict=self.feed_dict)
+                    train_step += 1
 
-                    if step % 5 == 0:
-                        summary = self.sess.run(merged, feed_dict=self.feed_dict)
-                        writer.add_summary(summary, global_step=step)
+                    if train_step % 5 == 0:
+                        summary = tf.Summary()
+                        summary.value.add(tag='train/loss', simple_value=l.mean())
+                        summary.value.add(tag='train/accuracy', simple_value=acc)
+                        writer.add_summary(summary, global_step=train_step)
                         writer.flush()
 
                     #l, p = self.sess.run([loss, predict], feed_dict=self.feed_dict)
-                    self.logger.info('%d: training %f %s'%(step, l.sum()/batch_size, prob))
+                    #self.logger.info('%d: training %f %s %s'%(step, l.sum()/batch_size, pred.sum(), label.sum()))
                 except KeyboardInterrupt:
                     raise
 
@@ -194,8 +200,8 @@ class NNModel:
                     self.logger.error(traceback.format_exc())
                     raise
 
-            '''
-            self.feed_dict[self.dropout_prob] = 1.0
+            self.feed_dict[self.dropout_keep_prob] = 1.0
+            val_acc = []
             for batch in val_bt:
                 comments_batch, labels = batch
                 if comments_batch.shape[0] != batch_size:
@@ -204,16 +210,15 @@ class NNModel:
                 self.build_feed_dict(comments_batch, labels)
                 print(comments_batch.shape)
 
-                l, p = self.sess.run([self.loss, self.predict], feed_dict=self.feed_dict)
-            '''
+                acc = self.sess.run(self.acc, feed_dict=self.feed_dict)
+                val_acc.append(acc)
 
             saver.save(self.sess, '%s_%d'%(self.model_filepath, epoch))
-            #self.logger.info('%d epoch avg loss: %f'%(epoch, sum(val_losses)))
-            #metrics.append([sum(train_losses)/(len(train_losses)+1), sum(val_losses)/(len(val_losses)+1)])
 
-            df_metrics = pd.DataFrame(metrics, columns=['train_err', 'val_err'])
-            df_metrics['x'] = df_metrics.index
-            df_metrics.to_csv(self.metric_path)
+            summary = tf.Summary()
+            summary.value.add(tag='val/accuracy', simple_value=mean(val_acc))
+            writer.add_summary(summary, global_step=epoch)
+            writer.flush()
 
     def _predict(self, graph, test_set):
         predict_prob = graph[-1][-1]
@@ -221,7 +226,7 @@ class NNModel:
 
         saver = tf.train.Saver()
         saver.restore(self.sess, self.model_filepath)
-        self.feed_dict[self.dropout_prob] = 1.0
+        self.feed_dict[self.dropout_keep_prob] = 1.0
 
         predict_probs = []
         for batch in bt:
@@ -247,16 +252,16 @@ class GRU(NNModel):
         #embed_mat = np.random.rand(vocab_shape[0], vocab_shape[1])
         #W = tf.constant(W, dtype=tf.float32)
 
-        with tf.variable_scope(name_or_scope='gru', regularizer=layers.l2_regularizer(0.5)):
+        with tf.variable_scope(name_or_scope='gru'):
             fc_w_1 = tf.Variable(tf.random_normal([gru_hidden_size, gru_hidden_size]), dtype=tf.float32)
             fc_b_1 = tf.Variable(tf.random_normal([1, gru_hidden_size]), dtype=tf.float32)
 
             fc_w_2 = tf.Variable(tf.random_normal([gru_hidden_size, len(self.Labels)]), dtype=tf.float32)
             fc_b_2 = tf.Variable(tf.random_normal([1, len(self.Labels)]), dtype=tf.float32)
 
-            embedding = tf.nn.embedding_lookup(params=W, ids=self.inputs, name='embed')
+            self.embedding = tf.nn.embedding_lookup(params=W, ids=self.inputs, name='embed')
             #reshape = tf.reshape(embedding, shape=(-1, self.sentence_length, embedding_size), name='reshape_first')
-            reshape = tf.reshape(embedding, shape=(-1, SENTENCE_LENGTH, embedding_size), name='reshape_first')
+            reshape = tf.reshape(self.embedding, shape=(-1, SENTENCE_LENGTH, embedding_size), name='reshape_first')
 
             # RNN input form: [sentence_length, [batch_size, embedding_size]]
             #inputs = tf.unstack(value=reshape, axis=1)
@@ -374,32 +379,37 @@ class MultiLayerGRU(GRU):
     def build_network(self):
         W = tf.get_variable(name='W', shape=vocab_shape)
 
-        fc_w = tf.Variable(tf.random_normal([self.gru_hidden_size, len(self.Labels)]), dtype=tf.float32)
-        fc_b = tf.Variable(tf.random_normal([1, len(self.Labels)]), dtype=tf.float32)
+        fc_w_1 = tf.Variable(tf.random_normal([gru_hidden_size, gru_hidden_size]), dtype=tf.float32)
+        fc_b_1 = tf.Variable(tf.random_normal([1, gru_hidden_size]), dtype=tf.float32)
+
+        fc_w_2 = tf.Variable(tf.random_normal([gru_hidden_size, len(self.Labels)]), dtype=tf.float32)
+        fc_b_2 = tf.Variable(tf.random_normal([1, len(self.Labels)]), dtype=tf.float32)
 
         embedding = tf.nn.embedding_lookup(params=W, ids=self.inputs, name='embed')
-        reshape = tf.reshape(embedding, shape=(-1, self.sentence_length, embedding_size), name='reshape_first')
+        reshape = tf.reshape(embedding, shape=(-1, SENTENCE_LENGTH, embedding_size), name='reshape_first')
         inputs = reshape
 
         gru_layers = []
         for _ in range(rnn_layer_num):
             cell = rnn.GRUCell(num_units=gru_hidden_size)
             cell = rnn.DropoutWrapper(cell,
-                                      input_keep_prob=self.dropout_prob,
-                                      output_keep_prob=self.dropout_prob)
+                                      input_keep_prob=self.dropout_keep_prob)
+
             gru_layers.append(cell)
 
         cell = rnn.MultiRNNCell(gru_layers)
         outputs, last_h = tf.nn.dynamic_rnn(cell=cell,
                                             inputs=inputs,
+                                            sequence_length=self.sentence_length,
                                             dtype=tf.float32)
 
-        last_h = last_h[-1]
-        predict_layer = tf.nn.tanh(tf.matmul(last_h, fc_w) + fc_b)
-        predict = tf.argmax(predict_layer, axis=1)
-        predict_prob = tf.nn.softmax(predict_layer)
+        index = tf.range(0, batch_size) * SENTENCE_LENGTH + (self.sentence_length - 1)
+        outputs = tf.gather(tf.reshape(outputs, [-1, gru_hidden_size]), index)  # batch_size * n_hidden
 
-        return [predict_layer, predict, outputs, last_h, predict_prob]
+        dense_layer = tf.nn.relu(tf.matmul(outputs, fc_w_1) + fc_b_1)
+        self.predict_layer = tf.matmul(dense_layer, fc_w_2) + fc_b_2
+        self.predict = tf.argmax(self.predict_layer, axis=1)
+        self.predict_prob = tf.nn.softmax(self.predict_layer)
 
 class Char_CNN_RNN(NNModel):
     def build_inputs(self):
@@ -459,7 +469,7 @@ if __name__ == '__main__':
     #df = pd.read_csv('data/train.csv').iloc[:1000, :]
     #df = pd.read_csv('data/train.csv')
 
-    kf = KFold(n_splits=2)
+    kf = KFold(n_splits=5)
     X = df.values
     kf_times = 0
 
@@ -475,7 +485,7 @@ if __name__ == '__main__':
         model = GRU('%d'%(kf_times), categories)
         #model = NNModel('cnn_toxic', ['negative', 'positive'])
         #model = AttentionGRU(str(kf_times), categories)
-        #model = MultiLayerGRU('gru_layers_%s_%d'%(cat, kf_times), ['negative', 'positive'])
+        #model = MultiLayerGRU('%d'%(kf_times), categories)
         #model = Sigmoid('sigmoid_%d'%(kf_times), categories)
         #model = Char_CNN_RNN('%d'%(kf_times), categories)
         #model = BILSTM('%d'%(kf_times), categories)

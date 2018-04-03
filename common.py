@@ -117,7 +117,7 @@ class Batch:
         comments_text = batch['comment_text'].fillna('none')
         comments_ids = self.to_id(comments_text)
         comments = self.padding(comments_ids)
-        return comments, labels
+        return comments, labels.values
 
     def sort_mat_by_row_non_zero_counts(self, m, labels):
         axes = tuple(x for x in range(2, len(m.shape)))
